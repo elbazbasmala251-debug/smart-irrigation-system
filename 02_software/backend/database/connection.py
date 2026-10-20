@@ -1,9 +1,21 @@
+
 import os
 import sqlite3
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+ENV_FILE = BACKEND_DIR / ".env"
+ENV_EXAMPLE_FILE = BACKEND_DIR / ".env.example"
+
+if ENV_FILE.exists():
+    load_dotenv(ENV_FILE)
+elif ENV_EXAMPLE_FILE.exists():
+    load_dotenv(ENV_EXAMPLE_FILE)
+
 
 DATABASE_PATH = Path(
     os.getenv(
@@ -64,4 +76,4 @@ def initialize_database():
 
     finally:
         connection.close()
-  
+        
