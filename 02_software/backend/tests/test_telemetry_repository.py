@@ -109,7 +109,52 @@ class TestTelemetryRepository(unittest.TestCase):
     def test_invalid_limit_is_rejected(self):
         with self.assertRaises(ValueError):
             get_latest_telemetry(limit=0)
+    def test_data_persists_after_python_restart(self):
+        import subprocess
+        import sys
 
+        save_telemetry(valid_payload())
+
+        script = """
+import json
+from repositories.telemetry_repository import get_latest_telemetry
+
+readings = get_latest_telemetry()
+print(json.dumps(readings))
+"""
+
+        env = os.environ.copy()
+        env["TELEMETRY_DB_PATH"] = str(self.db_path)
+
+        backend_dir = Path(__file__).resolve().parents[1]
+
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=backend_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        import json
+        readings = json.loads(result.stdout)
+
+        self.assertEqual(len(readings), 1)
+        self.assertEqual(
+            readings[0]["device_id"],
+            "esp32_station_01",
+        )
+        self.assertEqual(
+            readings[0]["timestamp"],
+            1729000000,
+        )
+        self.assertEqual(
+            readings[0]["soil_moisture_pct"],
+            45.2,
+        )
+        self.assertIsNone(readings[0]["nitrogen_mg_kg"])
+        self.assertEqual(readings[0]["pump_state"], 0)
 
 if __name__ == "__main__":
     unittest.main()
