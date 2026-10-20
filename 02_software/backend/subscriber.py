@@ -7,6 +7,8 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
+from repositories.telemetry_repository import save_telemetry
+
 
 # ============================================================
 # Configuration
@@ -158,6 +160,13 @@ def on_message(client, userdata, msg):
             print(f"\n[INVALID TELEMETRY] {message}")
             print(f"[INFO] Topic: {msg.topic}")
             return
+
+        try:
+            save_telemetry(data)
+            print("[INFO] Telemetry saved to database.")
+
+        except (RuntimeError, ValueError) as error:
+            print(f"[ERROR] Could not save telemetry: {error}")
 
         sensors = data["sensors"]
         actuators = data["actuators"]
