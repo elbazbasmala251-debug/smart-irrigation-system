@@ -1,4 +1,7 @@
+import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -52,8 +55,8 @@ class TestTelemetryRepository(unittest.TestCase):
         db_connection.initialize_database()
 
     def tearDown(self):
-        self.path_patcher.stop()
         self.repository_path_patcher.stop()
+        self.path_patcher.stop()
         self.temp_dir.cleanup()
 
     def test_save_and_retrieve_telemetry(self):
@@ -79,6 +82,7 @@ class TestTelemetryRepository(unittest.TestCase):
         first = valid_payload()
         second = valid_payload()
         second["device_id"] = "esp32_station_02"
+        second["timestamp"] += 1
 
         save_telemetry(first)
         save_telemetry(second)
@@ -97,7 +101,6 @@ class TestTelemetryRepository(unittest.TestCase):
     def test_data_persists_after_reopening_database(self):
         save_telemetry(valid_payload())
 
-        # Close the connection by opening and closing a fresh one.
         connection = db_connection.get_connection()
         connection.close()
 
@@ -109,18 +112,37 @@ class TestTelemetryRepository(unittest.TestCase):
     def test_invalid_limit_is_rejected(self):
         with self.assertRaises(ValueError):
             get_latest_telemetry(limit=0)
-    def test_data_persists_after_python_restart(self):
-        import subprocess
-        import sys
 
-        save_telemetry(valid_payload())
+        with self.assertRaises(ValueError):
+            get_telemetry_by_device("esp32_station_01", limit=0)
+
+    def test_invalid_pump_state_is_rejected(self):
+        payload = valid_payload()
+        payload["actuators"]["pump_state"] = 1
+
+        with self.assertRaises(ValueError):
+            save_telemetry(payload)
+
+    def test_invalid_telemetry_is_not_saved(self):
+        payload = valid_payload()
+        payload["sensors"]["soil_ph"] = 20
+
+        with self.assertRaises(ValueError):
+            save_telemetry(payload)
+
+        self.assertEqual(get_latest_telemetry(), [])
+
+    def test_data_persists_after_python_restart(self):
+        payload = valid_payload()
+        save_telemetry(payload)
 
         script = """
 import json
+from database.connection import initialize_database
 from repositories.telemetry_repository import get_latest_telemetry
 
-readings = get_latest_telemetry()
-print(json.dumps(readings))
+initialize_database()
+print(json.dumps(get_latest_telemetry()))
 """
 
         env = os.environ.copy()
@@ -137,25 +159,21 @@ print(json.dumps(readings))
             check=True,
         )
 
-        import json
         readings = json.loads(result.stdout)
 
         self.assertEqual(len(readings), 1)
-        self.assertEqual(
-            readings[0]["device_id"],
-            "esp32_station_01",
-        )
-        self.assertEqual(
-            readings[0]["timestamp"],
-            1729000000,
-        )
-        self.assertEqual(
-            readings[0]["soil_moisture_pct"],
-            45.2,
-        )
-        self.assertIsNone(readings[0]["nitrogen_mg_kg"])
-        self.assertEqual(readings[0]["pump_state"], 0)
+
+        reading = readings[0]
+        self.assertEqual(reading["device_id"], payload["device_id"])
+        self.assertEqual(reading["timestamp"], payload["timestamp"])
+        self.assertEqual(reading["soil_moisture_pct"], 45.2)
+        self.assertEqual(reading["soil_temperature_c"], 22.4)
+        self.assertEqual(reading["soil_ph"], 6.8)
+        self.assertIsNone(reading["nitrogen_mg_kg"])
+        self.assertIsNone(reading["phosphorus_mg_kg"])
+        self.assertIsNone(reading["potassium_mg_kg"])
+        self.assertEqual(reading["pump_state"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
-  
